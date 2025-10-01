@@ -943,3 +943,24 @@ int comparelwr(const char *s1,char *s2){
         }
     return 0;
 }
+
+int set_current_device_sm_limit(int dev, int new_limit) {
+    ensure_initialized();
+    if (dev < 0 || dev >= CUDA_DEVICE_MAX_COUNT) {
+        LOG_ERROR("Illegal device id: %d", dev);
+        return -1;
+    }
+    if (new_limit < 0 || new_limit > 100) {
+        LOG_ERROR("Illegal sm limit: %d. Must be between 0 and 100.", new_limit);
+        return -1;
+    }
+
+    lock_shrreg();
+    // 使用 LOG_MSG 確保在預設日誌等級下可見
+    LOG_MSG("Device %d SM limit is being changed from %lu to %d", dev, region_info.shared_region->sm_limit[dev], new_limit);
+    region_info.shared_region->sm_limit[dev] = new_limit;
+    unlock_shrreg();
+    
+    LOG_MSG("SM limit for device %d successfully updated to %d.", dev, new_limit);
+    return 0;
+}

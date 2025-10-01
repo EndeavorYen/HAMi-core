@@ -180,11 +180,12 @@ void* utilization_watcher() {
     int userutil[CUDA_DEVICE_MAX_COUNT];
     int sysprocnum;
     long share = 0;
-    int upper_limit = get_current_device_sm_limit(0);
+    // int upper_limit = get_current_device_sm_limit(0);
     ensure_initialized();
-    LOG_DEBUG("upper_limit=%d\n",upper_limit);
+    // LOG_DEBUG("upper_limit=%d\n",upper_limit);
     while (1){
-        nanosleep(&g_wait, NULL);
+      int upper_limit = get_current_device_sm_limit(0);  
+      nanosleep(&g_wait, NULL);
         if (pidfound==0) {
           update_host_pid();
           if (pidfound==0)

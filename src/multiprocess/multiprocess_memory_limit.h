@@ -180,5 +180,7 @@ unsigned int nvml_to_cuda_map(unsigned int nvmldev);
 unsigned int cuda_to_nvml_map(unsigned int cudadev);
 
 int clear_proc_slot_nolock(int);
+
+int set_current_device_sm_limit(int dev, int new_limit);
 #endif  // __MULTIPROCESS_MEMORY_LIMIT_H__
 
