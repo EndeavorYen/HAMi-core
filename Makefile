@@ -12,5 +12,5 @@ build-in-docker:
 		-w /libvgpu \
 		-e DEBIAN_FRONTEND=noninteractive \
 		nvidia/cuda:12.2.0-devel-ubuntu20.04 \
-		sh -c "apt-get -y update; apt-get -y install cmake; bash ./build.sh"
+		sh -c "sed -i 's|archive.ubuntu.com|tw.archive.ubuntu.com|g' /etc/apt/sources.list; apt-get -y update; apt-get -y install cmake; bash ./build.sh"
 .PHONY: build-in-docker

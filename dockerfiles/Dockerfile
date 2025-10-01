@@ -5,6 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /libvgpu
 COPY . /libvgpu
 
+RUN sed -i "s/archive.ubuntu/tw.archive.ubuntu/g" /etc/apt/sources.list
+
 RUN apt-get update && \
     apt-get install -y cmake && \
     rm -rf /var/lib/apt/lists/*
