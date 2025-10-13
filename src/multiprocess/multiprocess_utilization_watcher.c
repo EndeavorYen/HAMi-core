@@ -118,179 +118,140 @@ int setspec() {
     return 0;
 }
 
-// int get_used_gpu_utilization(int *userutil,int *sysprocnum) {
-//     struct timeval cur;
-//     size_t microsec;
-
-//     int i;
-//     unsigned int infcount;
-//     nvmlProcessInfo_v1_t infos[SHARED_REGION_MAX_PROCESS_NUM];
-
-//     unsigned int nvmlCounts;
-//     CHECK_NVML_API(nvmlDeviceGetCount(&nvmlCounts));
-//     lock_shrreg();
-
-//     int devi,cudadev;
-//     for (devi=0;devi<nvmlCounts;devi++){
-//       uint64_t sum=0;
-//       infcount = SHARED_REGION_MAX_PROCESS_NUM;
-//       shrreg_proc_slot_t *proc;
-//       cudadev = nvml_to_cuda_map((unsigned int)(devi));
-//       if (cudadev<0)
-//         continue;
-//       userutil[cudadev] = 0;
-//       nvmlDevice_t device;
-//       CHECK_NVML_API(nvmlDeviceGetHandleByIndex(cudadev, &device));
-
-//       //Get Memory for container
-//       nvmlReturn_t res = nvmlDeviceGetComputeRunningProcesses(device,&infcount,infos);
-//       if (res == NVML_SUCCESS) {
-//         for (i=0; i<infcount; i++){
-//           proc = find_proc_by_hostpid(infos[i].pid);
-//           if (proc != NULL){
-//               proc->monitorused[cudadev] = infos[i].usedGpuMemory;
-//           }
-//         }
-//       }
-//       // Get SM util for container
-//       gettimeofday(&cur,NULL);
-//       microsec = (cur.tv_sec - 1) * 1000UL * 1000UL + cur.tv_usec;
-//       nvmlProcessUtilizationSample_t processes_sample[SHARED_REGION_MAX_PROCESS_NUM];
-//       unsigned int processes_num = SHARED_REGION_MAX_PROCESS_NUM;
-//       res = nvmlDeviceGetProcessUtilization(device,processes_sample,&processes_num,microsec);
-//       if (res == NVML_SUCCESS) {
-//         for (i=0; i<processes_num; i++){
-//           proc = find_proc_by_hostpid(processes_sample[i].pid);
-//           if (proc != NULL){
-//               sum += processes_sample[i].smUtil;
-//               proc->device_util[cudadev].sm_util = processes_sample[i].smUtil;
-//           }
-//         }
-//       }
-//       if (sum < 0)
-//         sum = 0;
-//       userutil[cudadev] = sum;
-//     }
-//     unlock_shrreg();
-//     return 0;
-// }
-
-// 修改過的 get_used_gpu_utilization 函式，增加了詳細的日誌輸出
-int get_used_gpu_utilization(int *userutil, int *sysprocnum) {
+int get_used_gpu_utilization(int *userutil,int *sysprocnum) {
     struct timeval cur;
     size_t microsec;
+
     int i;
+    unsigned int infcount;
+    nvmlProcessInfo_v1_t infos[SHARED_REGION_MAX_PROCESS_NUM];
+
     unsigned int nvmlCounts;
-    nvmlReturn_t res;
-
-    // 此函式的目標是找到當前行程的利用率，sysprocnum 在此情境下固定為 1
-    *sysprocnum = 1;
-
-    // 1. 獲取當前行程的 host PID (這是 read-only 操作)
-    int my_hostpid = 0;
+    CHECK_NVML_API(nvmlDeviceGetCount(&nvmlCounts));
     lock_shrreg();
-    for (i = 0; i < region_info.shared_region->proc_num; i++) {
-        if (region_info.shared_region->procs[i].pid == getpid()) {
-            my_hostpid = region_info.shared_region->procs[i].hostpid;
-            break;
+
+    int devi,cudadev;
+    for (devi=0;devi<nvmlCounts;devi++){
+      uint64_t sum=0;
+      infcount = SHARED_REGION_MAX_PROCESS_NUM;
+      shrreg_proc_slot_t *proc;
+      cudadev = nvml_to_cuda_map((unsigned int)(devi));
+      if (cudadev<0)
+        continue;
+      userutil[cudadev] = 0;
+      nvmlDevice_t device;
+      CHECK_NVML_API(nvmlDeviceGetHandleByIndex(cudadev, &device));
+
+      //Get Memory for container
+      nvmlReturn_t res = nvmlDeviceGetComputeRunningProcesses(device,&infcount,infos);
+      if (res == NVML_SUCCESS) {
+        for (i=0; i<infcount; i++){
+          proc = find_proc_by_hostpid(infos[i].pid);
+          if (proc != NULL){
+              proc->monitorused[cudadev] = infos[i].usedGpuMemory;
+          }
         }
+      }
+      // Get SM util for container
+      gettimeofday(&cur,NULL);
+      microsec = (cur.tv_sec - 1) * 1000UL * 1000UL + cur.tv_usec;
+      nvmlProcessUtilizationSample_t processes_sample[SHARED_REGION_MAX_PROCESS_NUM];
+      unsigned int processes_num = SHARED_REGION_MAX_PROCESS_NUM;
+      res = nvmlDeviceGetProcessUtilization(device,processes_sample,&processes_num,microsec);
+      if (res == NVML_SUCCESS) {
+        for (i=0; i<processes_num; i++){
+          proc = find_proc_by_hostpid(processes_sample[i].pid);
+          if (proc != NULL){
+              sum += processes_sample[i].smUtil;
+              proc->device_util[cudadev].sm_util = processes_sample[i].smUtil;
+          }
+        }
+      }
+      if (sum < 0)
+        sum = 0;
+      userutil[cudadev] = sum;
     }
     unlock_shrreg();
-
-    // 如果找不到 hostpid (例如初始化中的 race condition)，安全起見回報 0
-    if (my_hostpid == 0) {
-        LOG_WARN("找不到當前行程 (PID: %d) 的 hostpid，將回報 0 利用率。", getpid());
-        nvmlDeviceGetCount(&nvmlCounts);
-        for(i = 0; i < nvmlCounts; i++) userutil[i] = 0;
-        return 0;
-    }
-
-    nvmlDeviceGetCount(&nvmlCounts);
-    int devi, cudadev;
-    for (devi = 0; devi < nvmlCounts; devi++) {
-        cudadev = nvml_to_cuda_map((unsigned int)(devi));
-        if (cudadev < 0) continue;
-
-        userutil[cudadev] = 0; // 預設為 0
-        nvmlDevice_t device;
-        CHECK_NVML_API(nvmlDeviceGetHandleByIndex(cudadev, &device));
-
-        // 2. 呼叫 NVML 取得所有行程的利用率列表
-        gettimeofday(&cur, NULL);
-        microsec = (cur.tv_sec - 1) * 1000UL * 1000UL + cur.tv_usec;
-        nvmlProcessUtilizationSample_t processes_sample[SHARED_REGION_MAX_PROCESS_NUM];
-        unsigned int processes_num = SHARED_REGION_MAX_PROCESS_NUM;
-        
-        res = nvmlDeviceGetProcessUtilization(device, processes_sample, &processes_num, microsec);
-        
-        if (res == NVML_SUCCESS) {
-            // 3. 在列表中搜尋，只取與自己 hostpid 相符的利用率
-            for (i = 0; i < processes_num; i++) {
-                if (processes_sample[i].pid == my_hostpid) {
-                    userutil[cudadev] = processes_sample[i].smUtil;
-                    // 找到了，可以直接跳出內層迴圈
-                    break; 
-                }
-            }
-        } else if (res != NVML_ERROR_NOT_FOUND) {
-            // "Not Found" 是正常情況 (例如 GPU 閒置)，其他錯誤則需記錄
-            LOG_WARN("nvmlDeviceGetProcessUtilization 失敗: %s", nvmlErrorString(res));
-        }
-    }
-
     return 0;
 }
 
-// void* utilization_watcher() {
-//     nvmlInit();
-//     int userutil[CUDA_DEVICE_MAX_COUNT];
-//     int sysprocnum;
-//     long share = 0;
-//     // int upper_limit = get_current_device_sm_limit(0);
-//     ensure_initialized();
-//     // LOG_DEBUG("upper_limit=%d\n",upper_limit);
-//     while (1){
-//       int upper_limit = get_current_device_sm_limit(0);  
-//       nanosleep(&g_wait, NULL);
-//         if (pidfound==0) {
-//           update_host_pid();
-//           if (pidfound==0)
-//             continue;
+// 修改過的 get_used_gpu_utilization 函式，增加了詳細的日誌輸出
+// int get_used_gpu_utilization(int *userutil, int *sysprocnum) {
+//     struct timeval cur;
+//     size_t microsec;
+//     int i;
+//     unsigned int nvmlCounts;
+//     nvmlReturn_t res;
+
+//     // 此函式的目標是找到當前行程的利用率，sysprocnum 在此情境下固定為 1
+//     *sysprocnum = 1;
+
+//     // 1. 獲取當前行程的 host PID (這是 read-only 操作)
+//     int my_hostpid = 0;
+//     lock_shrreg();
+//     for (i = 0; i < region_info.shared_region->proc_num; i++) {
+//         if (region_info.shared_region->procs[i].pid == getpid()) {
+//             my_hostpid = region_info.shared_region->procs[i].hostpid;
+//             break;
 //         }
-//         init_gpu_device_utilization();
-//         get_used_gpu_utilization(userutil,&sysprocnum);
-//         //if (sysprocnum == 1 &&
-//         //    userutil < upper_limit / 10) {
-//         //    g_cur_cuda_cores =
-//         //        delta(upper_limit, userutil, share);
-//         //    continue;
-//         //}
-//         if ((share==g_total_cuda_cores) && (g_cur_cuda_cores<0)) {
-//           g_total_cuda_cores *= 2;
-//           share = g_total_cuda_cores;
-//         }
-//         if ((userutil[0]<=100) && (userutil[0]>=0)){
-//           share = delta(upper_limit, userutil[0], share);
-//           change_token(share);
-//         }
-//         LOG_INFO("userutil1=%d currentcores=%ld total=%ld limit=%d share=%ld\n",userutil[0],g_cur_cuda_cores,g_total_cuda_cores,upper_limit,share);
 //     }
+//     unlock_shrreg();
+
+//     // 如果找不到 hostpid (例如初始化中的 race condition)，安全起見回報 0
+//     if (my_hostpid == 0) {
+//         LOG_WARN("找不到當前行程 (PID: %d) 的 hostpid，將回報 0 利用率。", getpid());
+//         nvmlDeviceGetCount(&nvmlCounts);
+//         for(i = 0; i < nvmlCounts; i++) userutil[i] = 0;
+//         return 0;
+//     }
+
+//     nvmlDeviceGetCount(&nvmlCounts);
+//     int devi, cudadev;
+//     for (devi = 0; devi < nvmlCounts; devi++) {
+//         cudadev = nvml_to_cuda_map((unsigned int)(devi));
+//         if (cudadev < 0) continue;
+
+//         userutil[cudadev] = 0; // 預設為 0
+//         nvmlDevice_t device;
+//         CHECK_NVML_API(nvmlDeviceGetHandleByIndex(cudadev, &device));
+
+//         // 2. 呼叫 NVML 取得所有行程的利用率列表
+//         gettimeofday(&cur, NULL);
+//         microsec = (cur.tv_sec - 1) * 1000UL * 1000UL + cur.tv_usec;
+//         nvmlProcessUtilizationSample_t processes_sample[SHARED_REGION_MAX_PROCESS_NUM];
+//         unsigned int processes_num = SHARED_REGION_MAX_PROCESS_NUM;
+        
+//         res = nvmlDeviceGetProcessUtilization(device, processes_sample, &processes_num, microsec);
+        
+//         if (res == NVML_SUCCESS) {
+//             // 3. 在列表中搜尋，只取與自己 hostpid 相符的利用率
+//             for (i = 0; i < processes_num; i++) {
+//                 if (processes_sample[i].pid == my_hostpid) {
+//                     userutil[cudadev] = processes_sample[i].smUtil;
+//                     // 找到了，可以直接跳出內層迴圈
+//                     break; 
+//                 }
+//             }
+//         } else if (res != NVML_ERROR_NOT_FOUND) {
+//             // "Not Found" 是正常情況 (例如 GPU 閒置)，其他錯誤則需記錄
+//             LOG_WARN("nvmlDeviceGetProcessUtilization 失敗: %s", nvmlErrorString(res));
+//         }
+//     }
+
+//     return 0;
 // }
 
-// 修改過的 utilization_watcher 函式，增加了詳細的日誌輸出
 void* utilization_watcher() {
     nvmlInit();
     int userutil[CUDA_DEVICE_MAX_COUNT];
     int sysprocnum;
     long share = 0;
-    
+    // int upper_limit = get_current_device_sm_limit(0);
     ensure_initialized();
-
-    // 修改過的 while 迴圈
+    // LOG_DEBUG("upper_limit=%d\n",upper_limit);
     while (1){
-        int upper_limit = get_current_device_sm_limit(0);
-
-        nanosleep(&g_wait, NULL);
+      int upper_limit = get_current_device_sm_limit(0);  
+      nanosleep(&g_wait, NULL);
         if (pidfound==0) {
           update_host_pid();
           if (pidfound==0)
@@ -298,26 +259,65 @@ void* utilization_watcher() {
         }
         init_gpu_device_utilization();
         get_used_gpu_utilization(userutil,&sysprocnum);
-
+        //if (sysprocnum == 1 &&
+        //    userutil < upper_limit / 10) {
+        //    g_cur_cuda_cores =
+        //        delta(upper_limit, userutil, share);
+        //    continue;
+        //}
         if ((share==g_total_cuda_cores) && (g_cur_cuda_cores<0)) {
           g_total_cuda_cores *= 2;
           share = g_total_cuda_cores;
         }
-        
         if ((userutil[0]<=100) && (userutil[0]>=0)){
-          // 在呼叫 delta 前後印出關鍵變數
-          long old_share = share;
           share = delta(upper_limit, userutil[0], share);
           change_token(share);
-
-          // ++ 以下是我們新增的日誌 ++
-          // LOG_MSG("Watcher Tick: Target=%d%%, Actual=%d%%, OldShare=%ld, NewShare=%ld, AvailableTokens=%ld",
-          //         upper_limit, userutil[0], old_share, share, g_cur_cuda_cores);
         }
-        // 舊的 LOG_INFO 可以註解掉或保留，新的 LOG_MSG 更詳細
-        // LOG_INFO("userutil1=%d currentcores=%ld total=%ld limit=%d share=%ld\n",userutil[0],g_cur_cuda_cores,g_total_cuda_cores,upper_limit,share);
+        LOG_INFO("userutil1=%d currentcores=%ld total=%ld limit=%d share=%ld\n",userutil[0],g_cur_cuda_cores,g_total_cuda_cores,upper_limit,share);
     }
 }
+
+// // 修改過的 utilization_watcher 函式，增加了詳細的日誌輸出
+// void* utilization_watcher() {
+//     nvmlInit();
+//     int userutil[CUDA_DEVICE_MAX_COUNT];
+//     int sysprocnum;
+//     long share = 0;
+    
+//     ensure_initialized();
+
+//     // 修改過的 while 迴圈
+//     while (1){
+//         int upper_limit = get_current_device_sm_limit(0);
+
+//         nanosleep(&g_wait, NULL);
+//         if (pidfound==0) {
+//           update_host_pid();
+//           if (pidfound==0)
+//             continue;
+//         }
+//         init_gpu_device_utilization();
+//         get_used_gpu_utilization(userutil,&sysprocnum);
+
+//         if ((share==g_total_cuda_cores) && (g_cur_cuda_cores<0)) {
+//           g_total_cuda_cores *= 2;
+//           share = g_total_cuda_cores;
+//         }
+        
+//         if ((userutil[0]<=100) && (userutil[0]>=0)){
+//           // 在呼叫 delta 前後印出關鍵變數
+//           long old_share = share;
+//           share = delta(upper_limit, userutil[0], share);
+//           change_token(share);
+
+//           // ++ 以下是我們新增的日誌 ++
+//           // LOG_MSG("Watcher Tick: Target=%d%%, Actual=%d%%, OldShare=%ld, NewShare=%ld, AvailableTokens=%ld",
+//           //         upper_limit, userutil[0], old_share, share, g_cur_cuda_cores);
+//         }
+//         // 舊的 LOG_INFO 可以註解掉或保留，新的 LOG_MSG 更詳細
+//         // LOG_INFO("userutil1=%d currentcores=%ld total=%ld limit=%d share=%ld\n",userutil[0],g_cur_cuda_cores,g_total_cuda_cores,upper_limit,share);
+//     }
+// }
 
 void init_utilization_watcher() {
     LOG_INFO("set core utilization limit to  %d",get_current_device_sm_limit(0));
