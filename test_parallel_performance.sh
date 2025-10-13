@@ -2,57 +2,51 @@
 
 # --- 測試設定 ---
 IMAGE_NAME="cuda_vmem:tf1.8-cu90"
-SM_LIMITS=(20 30 40)
+# 為三個容器設定不同的算力限制，總和為 90%
+SM_LIMITS=(10 11 12)
 GPU_DEVICE_ID=0
-TEST_PROGRAM_PATH="/test_build/test/test_performance_benchmark" 
+# 執行我們新建的效能評測程式
+BENCHMARK_PROGRAM="/test_build/test/test_performance_benchmark"
 
-# --- 全域變數，用於存放背景 PID ---
+# --- 全域變數 ---
 declare -a child_pids=()
 declare -a container_names=()
 
-# --- 清理函式 (修正版) ---
+# --- 清理函式 ---
 cleanup() {
     echo ""
     echo "--------------------------------------------------"
     echo "捕獲到中斷信號，正在停止所有背景程序與容器..."
-
-    # 1. 優先終止所有背景的 'docker logs' 程序
-    # 這是讓主腳本的 'wait' 得以解除的關鍵
     if [ ${#child_pids[@]} -ne 0 ]; then
-        echo "正在終止日誌追蹤程序..."
         kill "${child_pids[@]}" 2>/dev/null
     fi
-
-    # 2. 停止所有測試容器
     if [ ${#container_names[@]} -ne 0 ]; then
-        echo "正在停止 Docker 容器..."
         docker stop "${container_names[@]}" > /dev/null
         echo "所有容器已停止。"
     fi
-    
     echo "清理完畢。"
-    # 確保腳本在 trap 執行完畢後乾淨地退出
     exit 0
 }
 
 # --- 主程式開始 ---
-echo "開始多容器 Compute Slicing 並行壓力測試..."
-echo "按下 Ctrl+C 可隨時停止並清理所有容器。"
+echo "開始多容器並行效能評測..."
+echo "將啟動 3 個容器，算力限制分別為: ${SM_LIMITS[*]}%"
+echo "按下 Ctrl+C 可隨時中止測試。"
 echo "--------------------------------------------------"
 
-# 設定 trap，攔截 Ctrl+C (SIGINT) 和終止信號 (SIGTERM)
+# 設定 trap
 trap cleanup SIGINT SIGTERM
 
-# 檢查測試程式是否存在
-if [ ! -f "build/test/test_runtime_launch" ]; then
-    echo "錯誤：找不到 'build/test/test_runtime_launch' 執行檔。"
-    echo "請先執行 'make build-in-docker' 進行編譯。"
+# 檢查評測程式是否存在
+if [ ! -f "build/test/test_performance_benchmark" ]; then
+    echo "錯誤: 找不到 'build/test/test_performance_benchmark'。"
+    echo "請先執行 'make build-in-docker'。"
     exit 1
 fi
 
 # --- 啟動容器 ---
 for limit in "${SM_LIMITS[@]}"; do
-    name="compute-test-${limit}p"
+    name="perf-test-${limit}p"
     container_names+=("${name}")
     
     echo "正在背景啟動容器: ${name} (SM 限制: ${limit}%)..."
@@ -65,7 +59,7 @@ for limit in "${SM_LIMITS[@]}"; do
         -e CUDA_DEVICE_SM_LIMIT="${limit}" \
         -e LD_PRELOAD=/test_build/libvgpu.so \
         "${IMAGE_NAME}" \
-        "${TEST_PROGRAM_PATH}" > /dev/null
+        "${BENCHMARK_PROGRAM}" > /dev/null
 done
 
 echo "--------------------------------------------------"
@@ -73,12 +67,13 @@ echo "所有容器已啟動，正在即時追蹤日誌..."
 echo "同時，請在另一個終端機視窗執行 'watch -n 1 nvidia-smi' 來監控 GPU 總利用率。"
 echo ""
 
-# --- 平行顯示日誌 (修正版) ---
+# --- 平行顯示日誌 ---
 for name in "${container_names[@]}"; do
-    { docker logs -f "${name}"; echo "[${name}] Process Exited."; } | sed "s/^/[${name}] /" &
-    # 將剛剛啟動的背景程序的 PID 存入陣列
+    { docker logs -f "${name}"; } | sed "s/^/[${name}] /" &
     child_pids+=($!)
 done
 
-# 'wait' 會讓腳本在此暫停，直到 trap 被觸發並執行 exit
+# 等待所有背景 'docker logs' 程序結束
 wait
+# 所有日誌程序都結束後（代表所有容器都執行完畢），再執行一次清理
+cleanup
