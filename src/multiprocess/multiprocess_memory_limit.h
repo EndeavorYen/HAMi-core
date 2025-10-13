@@ -114,6 +114,8 @@ typedef struct {
     uint64_t last_kernel_time; // cache for current process
 } shared_region_info_t;
 
+// ++ 在此處加入下面這一行 ++
+extern shared_region_info_t region_info;
 
 typedef struct {
   size_t tid;

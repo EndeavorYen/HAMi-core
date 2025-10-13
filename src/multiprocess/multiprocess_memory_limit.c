@@ -38,7 +38,8 @@ int pidfound;
 
 int ctx_activate[32];
 
-static shared_region_info_t region_info = {0, -1, PTHREAD_ONCE_INIT, NULL, 0};
+// static shared_region_info_t region_info = {0, -1, PTHREAD_ONCE_INIT, NULL, 0};
+shared_region_info_t region_info = {0, -1, PTHREAD_ONCE_INIT, NULL, 0};
 //size_t initial_offset=117440512;
 int env_utilization_switch;
 int enable_active_oom_killer;

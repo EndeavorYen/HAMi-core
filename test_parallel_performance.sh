@@ -3,7 +3,7 @@
 # --- 測試設定 ---
 IMAGE_NAME="cuda_vmem:tf1.8-cu90"
 # 為三個容器設定不同的算力限制，總和為 90%
-SM_LIMITS=(10 11 12)
+SM_LIMITS=(20 30 40)
 GPU_DEVICE_ID=0
 # 執行我們新建的效能評測程式
 BENCHMARK_PROGRAM="/test_build/test/test_performance_benchmark"
