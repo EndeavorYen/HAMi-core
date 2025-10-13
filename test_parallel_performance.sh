@@ -1,55 +1,55 @@
 #!/bin/bash
 
-# --- 測試設定 ---
+# --- Test Configuration ---
 IMAGE_NAME="cuda_vmem:tf1.8-cu90"
-# 為三個容器設定不同的算力限制，總和為 90%
+# Set different compute power limits for three containers, totaling 90%
 SM_LIMITS=(20 30 40)
 GPU_DEVICE_ID=0
-# 執行我們新建的效能評測程式
+# Execute our newly created performance evaluation program
 BENCHMARK_PROGRAM="/test_build/test/test_performance_benchmark"
 
-# --- 全域變數 ---
+# --- Global Variables ---
 declare -a child_pids=()
 declare -a container_names=()
 
-# --- 清理函式 ---
+# --- Cleanup Function ---
 cleanup() {
     echo ""
     echo "--------------------------------------------------"
-    echo "捕獲到中斷信號，正在停止所有背景程序與容器..."
+    echo "Interrupt signal caught, stopping all background processes and containers..."
     if [ ${#child_pids[@]} -ne 0 ]; then
         kill "${child_pids[@]}" 2>/dev/null
     fi
     if [ ${#container_names[@]} -ne 0 ]; then
         docker stop "${container_names[@]}" > /dev/null
-        echo "所有容器已停止。"
+        echo "All containers have been stopped."
     fi
-    echo "清理完畢。"
+    echo "Cleanup complete."
     exit 0
 }
 
-# --- 主程式開始 ---
-echo "開始多容器並行效能評測..."
-echo "將啟動 3 個容器，算力限制分別為: ${SM_LIMITS[*]}%"
-echo "按下 Ctrl+C 可隨時中止測試。"
+# --- Main Program Start ---
+echo "Starting multi-container parallel performance evaluation..."
+echo "Launching 3 containers with compute power limits: ${SM_LIMITS[*]}%"
+echo "Press Ctrl+C to abort the test at any time."
 echo "--------------------------------------------------"
 
-# 設定 trap
+# Set trap
 trap cleanup SIGINT SIGTERM
 
-# 檢查評測程式是否存在
+# Check if the benchmark program exists
 if [ ! -f "build/test/test_performance_benchmark" ]; then
-    echo "錯誤: 找不到 'build/test/test_performance_benchmark'。"
-    echo "請先執行 'make build-in-docker'。"
+    echo "Error: 'build/test/test_performance_benchmark' not found."
+    echo "Please run 'make build-in-docker' first."
     exit 1
 fi
 
-# --- 啟動容器 ---
+# --- Launch Containers ---
 for limit in "${SM_LIMITS[@]}"; do
     name="perf-test-${limit}p"
     container_names+=("${name}")
     
-    echo "正在背景啟動容器: ${name} (SM 限制: ${limit}%)..."
+    echo "Launching container in the background: ${name} (SM Limit: ${limit}%)..."
     
     docker run -d --rm \
         --name "${name}" \
@@ -63,17 +63,17 @@ for limit in "${SM_LIMITS[@]}"; do
 done
 
 echo "--------------------------------------------------"
-echo "所有容器已啟動，正在即時追蹤日誌..."
-echo "同時，請在另一個終端機視窗執行 'watch -n 1 nvidia-smi' 來監控 GPU 總利用率。"
+echo "All containers have been launched, real-time logs are being tracked..."
+echo "Meanwhile, please run 'watch -n 1 nvidia-smi' in another terminal window to monitor overall GPU utilization."
 echo ""
 
-# --- 平行顯示日誌 ---
+# --- Display Logs in Parallel ---
 for name in "${container_names[@]}"; do
     { docker logs -f "${name}"; } | sed "s/^/[${name}] /" &
     child_pids+=($!)
 done
 
-# 等待所有背景 'docker logs' 程序結束
+# Wait for all background 'docker logs' processes to finish
 wait
-# 所有日誌程序都結束後（代表所有容器都執行完畢），再執行一次清理
+# Once all log processes finish (indicating all containers have completed), perform cleanup
 cleanup

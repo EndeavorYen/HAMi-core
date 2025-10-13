@@ -3,9 +3,9 @@
 #include <cuda_runtime.h>
 #include "test_utils.h"
 
-// Kernel 內部計算迴圈次數 (從 50 降低到 5)
+// Number of inner loop iterations in the kernel (reduced from 50 to 5)
 #define INNER_LOOPS 5
-// Kernel 總啟動次數 (從 500 降低到 200)
+// Total number of kernel launches (reduced from 500 to 200)
 #define NUM_LAUNCHES 200
 
 __global__ void computeKernel(double* data, int N) {
@@ -36,7 +36,7 @@ int main() {
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    printf("開始快速效能評測，將執行 %d 次 Kernel 啟動...\n", NUM_LAUNCHES);
+    printf("Starting performance benchmark, executing %d kernel launches...\n", NUM_LAUNCHES);
 
     cudaEventRecord(start);
 
@@ -53,12 +53,12 @@ int main() {
     float iterations_per_second = NUM_LAUNCHES / seconds;
 
     const char* sm_limit_env = getenv("CUDA_DEVICE_SM_LIMIT");
-    printf("\n--- 評測結果 ---\n");
-    printf("算力限制設定:   %s%%\n", sm_limit_env ? sm_limit_env : "100 (Default)");
-    printf("總共執行次數:   %d\n", NUM_LAUNCHES);
-    printf("總耗時 (秒):    %.4f\n", seconds);
-    printf("效能:           %.2f launches/sec\n", iterations_per_second);
-    printf("--------------------\n");
+    printf("\n--- Benchmark Results ---\n");
+    printf("SM Limit Setting:   %s%%\n", sm_limit_env ? sm_limit_env : "100 (Default)");
+    printf("Total Launches:     %d\n", NUM_LAUNCHES);
+    printf("Total Time (sec):   %.4f\n", seconds);
+    printf("Performance:        %.2f launches/sec\n", iterations_per_second);
+    printf("-------------------------\n");
 
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
