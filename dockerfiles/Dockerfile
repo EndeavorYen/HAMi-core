@@ -8,7 +8,7 @@ COPY . /libvgpu
 RUN sed -i "s/archive.ubuntu/tw.archive.ubuntu/g" /etc/apt/sources.list
 
 RUN apt-get update && \
-    apt-get install -y cmake && \
+    apt-get install -y cmake git && \
     rm -rf /var/lib/apt/lists/*
 
 RUN bash ./build.sh

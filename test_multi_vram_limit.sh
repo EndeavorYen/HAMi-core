@@ -1,51 +1,51 @@
 #!/bin/bash
 
-# --- 測試設定 ---
+# --- Test Configuration ---
 IMAGE_NAME="cuda_vmem:tf1.8-cu90"
 VRAM_LIMITS=("1g" "4g" "6g")
 GPU_DEVICE_ID=0
 
-# --- 清理函式 ---
-# 當腳本被中斷 (Ctrl+C) 或正常結束時，此函式會被呼叫
+# --- Cleanup Function ---
+# This function is called when the script is interrupted (Ctrl+C) or exits normally
 cleanup() {
     echo ""
     echo "--------------------------------------------------"
-    echo "正在停止並清理所有測試容器..."
-    # 如果 container_names 陣列不為空
+    echo "Stopping and cleaning up all test containers..."
+    # If the container_names array is not empty
     if [ ${#container_names[@]} -ne 0 ]; then
         docker stop "${container_names[@]}" > /dev/null
-        echo "所有容器已停止。"
+        echo "All containers have been stopped."
     fi
-    # 殺掉所有在背景執行的 docker logs 程序
+    # Kill all background docker logs processes
     kill 0
 }
 
-# --- 主程式開始 ---
-echo "開始多容器 VRAM 限制並行壓力測試..."
-echo "按下 Ctrl+C 可隨時停止並清理所有容器。"
+# --- Main Program Start ---
+echo "Starting multi-container VRAM limit parallel stress test..."
+echo "Press Ctrl+C to stop and clean up all containers at any time."
 echo "--------------------------------------------------"
 
-# 設定 trap，攔截 Ctrl+C (SIGINT) 和終止信號 (SIGTERM)
+# Set trap to intercept Ctrl+C (SIGINT) and termination signals (SIGTERM)
 trap cleanup SIGINT SIGTERM
 
-# 檢查必要的 build 目錄是否存在
+# Check if the required build directory exists
 if [ ! -d "build" ] || [ ! -f "build/test/test_vram_limit" ]; then
-    echo "錯誤：找不到 build/test/test_vram_limit 執行檔。"
-    echo "請先執行 'make build-in-docker' 進行編譯。"
+    echo "Error: Cannot find build/test/test_vram_limit executable."
+    echo "Please run 'make build-in-docker' to compile it first."
     exit 1
 fi
 
-# 用於存放 container 名稱的陣列
+# Array to store container names
 container_names=()
 
-# --- 啟動容器 ---
+# --- Start Containers ---
 for limit in "${VRAM_LIMITS[@]}"; do
     name="vram-test-${limit}"
     container_names+=("${name}")
     
-    echo "正在背景啟動容器: ${name} (VRAM 限制: ${limit})..."
+    echo "Starting container in the background: ${name} (VRAM limit: ${limit})..."
     
-    # 在背景 (-d) 啟動容器
+    # Start the container in the background (-d)
     docker run -d --rm \
         --name "${name}" \
         --gpus device=${GPU_DEVICE_ID} \
@@ -58,17 +58,17 @@ for limit in "${VRAM_LIMITS[@]}"; do
 done
 
 echo "--------------------------------------------------"
-echo "所有容器已啟動，正在即時追蹤日誌..."
+echo "All containers have been started, now tracking logs in real-time..."
 echo ""
 
-# --- 平行顯示日誌 ---
-# 為每個容器在背景啟動一個 'docker logs' 程序
-# 每個程序的輸出都透過 sed 加上容器名稱前綴
+# --- Display Logs in Parallel ---
+# Start a 'docker logs' process in the background for each container
+# Prefix each process's output with the container name using sed
 for name in "${container_names[@]}"; do
     docker logs -f "${name}" | sed "s/^/[${name}] /" &
 done
 
-# --- 等待與收尾 ---
-# 'wait' 會讓腳本在此暫停，直到所有背景程序 (docker logs) 結束
-# 當你按下 Ctrl+C 時，trap 會觸發 cleanup，殺掉所有背景程序，wait 也隨之結束
+# --- Wait and Cleanup ---
+# 'wait' pauses the script here until all background processes (docker logs) finish
+# When you press Ctrl+C, the trap triggers cleanup, kills all background processes, and wait ends
 wait

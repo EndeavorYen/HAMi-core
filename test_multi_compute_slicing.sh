@@ -1,61 +1,61 @@
 #!/bin/bash
 
-# --- 測試設定 ---
+# --- Test Configuration ---
 IMAGE_NAME="cuda_vmem:tf1.8-cu90"
 SM_LIMITS=(20 30 40)
 GPU_DEVICE_ID=0
 TEST_PROGRAM_PATH="/test_build/test/test_performance_benchmark" 
 
-# --- 全域變數，用於存放背景 PID ---
+# --- Global variables to store background PIDs ---
 declare -a child_pids=()
 declare -a container_names=()
 
-# --- 清理函式 (修正版) ---
+# --- Cleanup function (revised version) ---
 cleanup() {
     echo ""
     echo "--------------------------------------------------"
-    echo "捕獲到中斷信號，正在停止所有背景程序與容器..."
+    echo "Interrupt signal caught, stopping all background processes and containers..."
 
-    # 1. 優先終止所有背景的 'docker logs' 程序
-    # 這是讓主腳本的 'wait' 得以解除的關鍵
+    # 1. Terminate all background 'docker logs' processes first
+    # This is key to releasing the 'wait' in the main script
     if [ ${#child_pids[@]} -ne 0 ]; then
-        echo "正在終止日誌追蹤程序..."
+        echo "Terminating log tracking processes..."
         kill "${child_pids[@]}" 2>/dev/null
     fi
 
-    # 2. 停止所有測試容器
+    # 2. Stop all test containers
     if [ ${#container_names[@]} -ne 0 ]; then
-        echo "正在停止 Docker 容器..."
+        echo "Stopping Docker containers..."
         docker stop "${container_names[@]}" > /dev/null
-        echo "所有容器已停止。"
+        echo "All containers stopped."
     fi
     
-    echo "清理完畢。"
-    # 確保腳本在 trap 執行完畢後乾淨地退出
+    echo "Cleanup complete."
+    # Ensure the script exits cleanly after the trap is executed
     exit 0
 }
 
-# --- 主程式開始 ---
-echo "開始多容器 Compute Slicing 並行壓力測試..."
-echo "按下 Ctrl+C 可隨時停止並清理所有容器。"
+# --- Main Program Start ---
+echo "Starting multi-container Compute Slicing concurrent stress test..."
+echo "Press Ctrl+C to stop and clean up all containers at any time."
 echo "--------------------------------------------------"
 
-# 設定 trap，攔截 Ctrl+C (SIGINT) 和終止信號 (SIGTERM)
+# Set up trap to catch Ctrl+C (SIGINT) and termination signals (SIGTERM)
 trap cleanup SIGINT SIGTERM
 
-# 檢查測試程式是否存在
+# Check if the test program exists
 if [ ! -f "build/test/test_runtime_launch" ]; then
-    echo "錯誤：找不到 'build/test/test_runtime_launch' 執行檔。"
-    echo "請先執行 'make build-in-docker' 進行編譯。"
+    echo "Error: 'build/test/test_runtime_launch' executable not found."
+    echo "Please run 'make build-in-docker' to compile it first."
     exit 1
 fi
 
-# --- 啟動容器 ---
+# --- Start Containers ---
 for limit in "${SM_LIMITS[@]}"; do
     name="compute-test-${limit}p"
     container_names+=("${name}")
     
-    echo "正在背景啟動容器: ${name} (SM 限制: ${limit}%)..."
+    echo "Starting container in the background: ${name} (SM Limit: ${limit}%)..."
     
     docker run -d --rm \
         --name "${name}" \
@@ -69,16 +69,16 @@ for limit in "${SM_LIMITS[@]}"; do
 done
 
 echo "--------------------------------------------------"
-echo "所有容器已啟動，正在即時追蹤日誌..."
-echo "同時，請在另一個終端機視窗執行 'watch -n 1 nvidia-smi' 來監控 GPU 總利用率。"
+echo "All containers started, now tracking logs in real-time..."
+echo "Meanwhile, run 'watch -n 1 nvidia-smi' in another terminal window to monitor overall GPU utilization."
 echo ""
 
-# --- 平行顯示日誌 (修正版) ---
+# --- Parallel Log Display (revised version) ---
 for name in "${container_names[@]}"; do
     { docker logs -f "${name}"; echo "[${name}] Process Exited."; } | sed "s/^/[${name}] /" &
-    # 將剛剛啟動的背景程序的 PID 存入陣列
+    # Store the PID of the just-started background process into the array
     child_pids+=($!)
 done
 
-# 'wait' 會讓腳本在此暫停，直到 trap 被觸發並執行 exit
+# 'wait' will pause the script here until the trap is triggered and exit is executed
 wait
