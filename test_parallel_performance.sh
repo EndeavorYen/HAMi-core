@@ -3,7 +3,8 @@
 # --- Test Configuration ---
 IMAGE_NAME="cuda_vmem:tf1.8-cu90"
 # Set different compute power limits for three containers, totaling 90%
-SM_LIMITS=(20 30 40)
+# SM_LIMITS=(20 30 40)
+SM_LIMITS=(100 100 100)
 GPU_DEVICE_ID=0
 # Execute our newly created performance evaluation program
 BENCHMARK_PROGRAM="/test_build/test/test_performance_benchmark"

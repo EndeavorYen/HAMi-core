@@ -187,7 +187,7 @@ make build-in-docker
 
     # 進入容器後，立即啟動壓力測試
     # 這個程式會持續運行
-    /test_build/test_runtime_launch
+    /test_build/test/test_runtime_launch
     ```
 
 2.  **在主機上監控 GPU**
