@@ -29,7 +29,8 @@ int main(int argc, char** argv) {
     // default parameters (can be overridden via command-line)
     long long N = 1LL << 27; // number of elements
     int threadsPerBlock = 256;
-    int batch_size = 100; // number of launches per measurement batch
+    // int batch_size = 100; // number of launches per measurement batch
+    int batch_size = 10; // number of launches per measurement batch
 
     if (argc > 1) N = atoll(argv[1]);
     if (argc > 2) batch_size = atoi(argv[2]);

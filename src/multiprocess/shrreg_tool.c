@@ -56,6 +56,7 @@ int main(int argc, char* argv[]) {
     if (argc > 1 && strcmp(argv[1], "--help") == 0) {
         printf(
             "--create_new    Create new shared region file\n"
+            "--set-sm-limit <dev_id> <limit_percent>    Dynamically set SM limit (e.g., 0 30)\n"
         );
         return 0;
     }
@@ -73,6 +74,16 @@ int main(int argc, char* argv[]) {
         }
         if (strcmp(arg, "--resume") == 0){
             send_resume_signal();
+        }
+        if (strcmp(arg, "--set-sm-limit") == 0) {
+            if (k + 2 < argc) {
+                int dev_id = atoi(argv[k + 1]);
+                int limit = atoi(argv[k + 2]);
+                set_current_device_sm_limit(dev_id, limit);
+                k += 2; // 跳過已經處理過的參數
+            } else {
+                fprintf(stderr, "Error: --set-sm-limit requires <device_id> and <limit_percent> arguments.\n");
+            }
         }
         if (strcmp(arg, "--print") == 0){
             print_shared_region();

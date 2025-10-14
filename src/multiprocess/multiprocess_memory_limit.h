@@ -114,6 +114,8 @@ typedef struct {
     uint64_t last_kernel_time; // cache for current process
 } shared_region_info_t;
 
+// ++ 在此處加入下面這一行 ++
+extern shared_region_info_t region_info;
 
 typedef struct {
   size_t tid;
@@ -180,5 +182,7 @@ unsigned int nvml_to_cuda_map(unsigned int nvmldev);
 unsigned int cuda_to_nvml_map(unsigned int cudadev);
 
 int clear_proc_slot_nolock(int);
+
+int set_current_device_sm_limit(int dev, int new_limit);
 #endif  // __MULTIPROCESS_MEMORY_LIMIT_H__
 

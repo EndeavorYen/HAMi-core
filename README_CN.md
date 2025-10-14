@@ -102,3 +102,124 @@ Mon Dec  2 04:38:12 2024
 
 ```bash
 ./test/test_alloc
+```
+
+
+-----
+
+## GPU Slicing 測試
+
+### 動態調整與功能驗證 (Runtime Verification and Dynamic Adjustment)
+
+本章節將引導您如何在容器 (Container) 環境中，驗證 Hami-core 的核心功能：
+
+1.  **顯存限制 (VRAM Limit)**：驗證容器內的 GPU 顯存是否被成功限制在指定的大小。
+2.  **動態算力調整 (Dynamic Compute Limit)**：驗證如何在容器執行期間，動態地調整 GPU 的算力限制。
+
+#### 前置準備：編譯專案
+
+在進行任何測試之前，請先確保您已經在專案的根目錄下執行過編譯指令。這個指令會利用 Docker 建立一個乾淨的編譯環境，並將編譯產物 (包含 `libvgpu.so` 和所有測試工具) 放置在主機的 `build/` 目錄下。
+
+```bash
+make build-in-docker
+```
+
+#### 測試 1：驗證 VRAM 限制
+
+此測試將啟動一個 VRAM 上限為 1GB 的容器，並執行一個壓力測試程式，該程式會不斷申請記憶體直到觸發「記憶體不足」(Out of Memory) 錯誤為止。
+
+1.  **啟動容器**
+    使用以下指令啟動容器。我們將主機上的 `build` 目錄掛載到容器的 `/test_build` 路徑，以便執行最新的測試程式。
+
+    ```bash
+    docker run --rm -it \
+        --gpus all \
+        --mount type=tmpfs,destination=/tmp/vgpulock \
+        -v $(pwd)/build:/test_build \
+        -e CUDA_DEVICE_MEMORY_LIMIT=1g \
+        -e LD_PRELOAD=/test_build/libvgpu.so \
+        cuda_vmem:tf1.8-cu90 \
+        bash
+    ```
+
+2.  **執行測試程式**
+    在容器內，執行 `test_vram_limit` 程式。
+
+    ```bash
+    # 在 Container 內執行
+    /test_build/test_vram_limit
+    ```
+
+3.  **預期結果**
+    程式會開始持續分配記憶體，並在總分配量接近 1024MB 時，成功捕獲 `CUDA_ERROR_OUT_OF_MEMORY` 錯誤並正常退出。這證明 VRAM 限制功能已成功生效。
+
+    ```
+    開始 VRAM 分配測試，每次增加 100MB...
+    ...
+    第 10 次分配: 成功分配 100MB. 目前總分配量: 1000.00 MB
+
+    =========================================================
+    成功捕獲預期的 CUDA_ERROR_OUT_OF_MEMORY 錯誤！
+    VRAM 限制功能正常運作。
+    在 OOM 之前，總共成功分配了: 1000.00 MB
+    =========================================================
+
+    VRAM 限制測試完成。
+    ```
+
+#### 測試 2：驗證動態算力調整
+
+此測試將演示如何在容器執行期間，從外部動態調整 GPU 的算力限制。
+
+1.  **啟動容器與壓力測試 (終端機 A)**
+    啟動一個容器，設定**初始算力上限為 80%**，並在其中執行一個無限迴圈的 GPU 壓力測試程式。
+
+    ```bash
+    # 啟動一個名為 hami-test 的容器
+    docker run --rm -it --name hami-test \
+        --gpus all \
+        --mount type=tmpfs,destination=/tmp/vgpulock \
+        -v $(pwd)/build:/test_build \
+        -e CUDA_DEVICE_SM_LIMIT=80 \
+        -e LD_PRELOAD=/test_build/libvgpu.so \
+        cuda_vmem:tf1.8-cu90 \
+        bash
+
+    # 進入容器後，立即啟動壓力測試
+    # 這個程式會持續運行
+    /test_build/test_runtime_launch
+    ```
+
+2.  **在主機上監控 GPU**
+    在您的**主機 (Host)** 上打開一個新的終端機，執行以下指令來監控 GPU 狀態。你會看到 GPU 利用率 (`GPU-Util`) 穩定在 80% 左右。
+
+    ```bash
+    watch -n 1 nvidia-smi
+    ```
+
+3.  **進入容器並修改算力 (終端機 B)**
+    再打開一個新的終端機，使用 `docker exec` 進入**正在運行的** `hami-test` 容器。
+
+    ```bash
+    docker exec -it hami-test bash
+    ```
+
+    進入容器後，使用我們擴充過的 `shrreg-tool` 工具來動態修改算力限制。例如，將 0 號 GPU 的算力限制從 80% **降至 20%**。
+
+    ```bash
+    # 在終端機 B (容器內) 執行
+    /test_build/shrreg-tool --set-sm-limit 0 20
+    ```
+
+4.  **觀察結果**
+    此時，切換回你的 `nvidia-smi` 監控視窗。你會看到 GPU 利用率在幾秒鐘內從 80% 明顯下降，並穩定在 20% 附近。
+
+5.  **再次調整**
+    你可以在終端機 B 中再次執行指令，將算力調高，例如調至 70%。
+
+    ```bash
+    # 在終端機 B (容器內) 執行
+    /test_build/shrreg-tool --set-sm-limit 0 70
+    ```
+
+    GPU 利用率也會隨之回升至 70% 左右。這個流程完整地驗證了算力限制的動態調整能力。
