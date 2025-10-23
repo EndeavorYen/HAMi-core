@@ -4,9 +4,10 @@
 #include "test_utils.h"
 
 // Number of inner loop iterations in the kernel (reduced from 50 to 5)
-#define INNER_LOOPS 5
-// Total number of kernel launches (reduced from 500 to 200)
-#define NUM_LAUNCHES 200
+// #define INNER_LOOPS 5
+#define INNER_LOOPS 50
+// Total number of kernel launches (reduced from 500 to 100)
+#define NUM_LAUNCHES 100
 
 __global__ void computeKernel(double* data, int N) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
